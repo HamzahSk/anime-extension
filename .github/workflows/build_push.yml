@@ -50,6 +50,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           # Perintah ini akan langsung mem-build APK untuk modul Anichin
+          ./gradlew :src:id:anichin:spotlessApply
           ./gradlew :src:id:anichin:assembleRelease
 
       - name: Upload Anichin APK Artifact
