@@ -4,6 +4,7 @@ import android.util.Log
 import aniyomi.lib.dailymotionextractor.DailymotionExtractor
 import aniyomi.lib.okruextractor.OkruExtractor
 import aniyomi.lib.rumbleextractor.RumbleExtractor
+import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
@@ -31,10 +32,15 @@ class Anichin :
 
     // =============================== Pencarian ===============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        // Jika ada filter aktif (selain query bawaan), gunakan endpoint /seri/ sesuai form HTML
+        // Pengecekan apakah ada filter yang aktif secara aman dan spesifik
         val hasActiveFilters = filters.any { filter ->
-            (filter is AnimeFilter.Select<*> && filter.state != 0) ||
-                (filter is AnimeFilter.Group<*> && filter.state.any { (it as AnimeFilter.CheckBox).state })
+            when (filter) {
+                is AnimeFilter.Select<*> -> filter.state != 0
+                is AnimeFilter.Group<*> -> filter.state.any { 
+                    (it as? AnimeFilter.CheckBox)?.state == true 
+                }
+                else -> false
+            }
         }
 
         val urlBuilder = if (hasActiveFilters || query.isBlank()) {
@@ -49,7 +55,7 @@ class Anichin :
                 builder.addQueryParameter("s", query)
             }
 
-            // Loop and append all active query filters
+            // Loop dan pasang query parameter berdasarkan filter yang dipilih
             filters.forEach { filter ->
                 when (filter) {
                     is StatusFilter -> {
@@ -88,11 +94,12 @@ class Anichin :
                             }
                         }
                     }
+                    else -> {} // Menangani tipe AnimeFilter lainnya agar tidak error ketika dikompilasi
                 }
             }
             builder
         } else {
-            // Default search request behaviour (Tanpa filter tambahan)
+            // Jalur pencarian default jika tidak ada filter tambahan yang aktif
             baseUrl.toHttpUrl().newBuilder().apply {
                 addPathSegment("page")
                 addPathSegment(page.toString())
