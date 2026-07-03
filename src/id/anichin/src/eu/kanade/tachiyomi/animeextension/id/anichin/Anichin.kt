@@ -31,16 +31,75 @@ class Anichin :
 
     // =============================== Pencarian ===============================
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        val urlBuilder = baseUrl.toHttpUrl().newBuilder().apply {
+        // Jika ada filter aktif (selain query bawaan), gunakan endpoint /seri/ sesuai form HTML
+        val hasActiveFilters = filters.any { filter ->
+            (filter is AnimeFilter.Select<*> && filter.state != 0) ||
+                (filter is AnimeFilter.Group<*> && filter.state.any { (it as AnimeFilter.CheckBox).state })
+        }
+
+        val urlBuilder = if (hasActiveFilters || query.isBlank()) {
+            val builder = "$baseUrl/seri".toHttpUrl().newBuilder()
+            
+            if (page > 1) {
+                builder.addPathSegment("page")
+                builder.addPathSegment(page.toString())
+            }
+
             if (query.isNotBlank()) {
+                builder.addQueryParameter("s", query)
+            }
+
+            // Loop and append all active query filters
+            filters.forEach { filter ->
+                when (filter) {
+                    is StatusFilter -> {
+                        if (filter.getUriPart().isNotEmpty()) {
+                            builder.addQueryParameter("status", filter.getUriPart())
+                        }
+                    }
+                    is TypeFilter -> {
+                        if (filter.getUriPart().isNotEmpty()) {
+                            builder.addQueryParameter("type", filter.getUriPart())
+                        }
+                    }
+                    is OrderFilter -> {
+                        if (filter.getUriPart().isNotEmpty()) {
+                            builder.addQueryParameter("order", filter.getUriPart())
+                        }
+                    }
+                    is GenreList -> {
+                        filter.state.forEach { genre ->
+                            if (genre.state) {
+                                builder.addQueryParameter("genre[]", genre.id)
+                            }
+                        }
+                    }
+                    is SeasonList -> {
+                        filter.state.forEach { season ->
+                            if (season.state) {
+                                builder.addQueryParameter("season[]", season.id)
+                            }
+                        }
+                    }
+                    is StudioList -> {
+                        filter.state.forEach { studio ->
+                            if (studio.state) {
+                                builder.addQueryParameter("studio[]", studio.id)
+                            }
+                        }
+                    }
+                }
+            }
+            builder
+        } else {
+            // Default search request behaviour (Tanpa filter tambahan)
+            baseUrl.toHttpUrl().newBuilder().apply {
                 addPathSegment("page")
                 addPathSegment(page.toString())
                 addQueryParameter("s", query)
-            } else {
-                addPathSegment("complete")
-                addPathSegment(page.toString())
             }
         }
+        
         return GET(urlBuilder.build().toString())
     }
 
@@ -79,38 +138,33 @@ class Anichin :
     }
 
     // ============================ Pengekstrakan Video Links =============================
-    // Menginisialisasi extractor dengan context client & headers dari base class AnimeStream
     private val dailymotionExtractor by lazy { DailymotionExtractor(client, headers) }
     private val rumbleExtractor by lazy { RumbleExtractor(client, headers) }
     private val okruExtractor by lazy { OkruExtractor(client) }
 
     override suspend fun getVideoList(url: String, name: String): List<Video> {
         val videoList = mutableListOf<Video>()
-        val prefix = "$name - " // Menambahkan penanda nama server pada resolusi video
+        val prefix = "$name - "
 
         when {
-            // 1. Dailymotion Extractor (Mendukung link geo.dailymotion / dailymotion biasa)
             url.contains("dailymotion") || name.contains("dailymotion", true) -> {
                 runCatching {
                     videoList.addAll(dailymotionExtractor.videosFromUrl(url, prefix = prefix))
                 }
             }
 
-            // 2. Rumble Extractor
             url.contains("rumble") || name.contains("rumble", true) -> {
                 runCatching {
                     videoList.addAll(rumbleExtractor.videosFromUrl(url, prefix = prefix))
                 }
             }
 
-            // 3. OK.ru Extractor
             url.contains("ok.ru") || name.contains("ok.ru", true) -> {
                 runCatching {
                     videoList.addAll(okruExtractor.videosFromUrl(url, prefix = prefix))
                 }
             }
 
-            // 4. Custom Stream m3u8 parser untuk anichin.stream (Premium 1)
             name.contains("Premium", true) || url.contains("anichin.stream") -> {
                 runCatching {
                     val fixUrl = if (url.contains("?id=")) {
@@ -129,4 +183,15 @@ class Anichin :
 
         return videoList
     }
+
+    // ============================== Setup Filters ==============================
+    override fun getFilterList(): AnimeFilterList = AnimeFilterList(
+        GenreList(AnichinFilters.GENRES),
+        SeasonList(AnichinFilters.SEASONS),
+        StudioList(AnichinFilters.STUDIOS),
+        AnimeFilter.Separator(),
+        StatusFilter(),
+        TypeFilter(),
+        OrderFilter(),
+    )
 }
