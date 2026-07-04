@@ -3,146 +3,124 @@ package eu.kanade.tachiyomi.animeextension.all.xvideos
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
-import eu.kanade.tachiyomi.animesource.model.AnimeFilter
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.animesource.model.SAnime
-import eu.kanade.tachiyomi.animesource.model.SEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.model.*
 import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
 import keiyoushi.utils.getPreferencesLazy
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
-class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
+class Xvideos : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "Xvideos"
     override val baseUrl = "https://www.xvideos.com"
-    override val lang = "id"
-    override val supportsLatest = true
+    override val lang = "all"
+    override val supportsLatest = false
 
     private val preferences by getPreferencesLazy()
 
-    // ============================== Browser/Search ==============================
-    override fun popularAnimeRequest(page: Int) = GET("$baseUrl/popular/?p=${page - 1}")
-
-    override fun latestUpdatesRequest(page: Int) = GET("$baseUrl/new/?p=${page - 1}")
+    // Client dengan Interceptor untuk menyuntikkan Cookie berdasarkan settingan di PreferenceScreen
+    override val client: OkHttpClient = network.client.newBuilder()
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val country = preferences.getString(PREF_COUNTRY_KEY, PREF_COUNTRY_DEFAULT) ?: ""
+            val type = preferences.getString(PREF_TYPE_KEY, PREF_TYPE_DEFAULT) ?: ""
+            
+            val builder = request.newBuilder()
+            if (country.isNotEmpty() || type.isNotEmpty()) {
+                val cookies = mutableListOf<String>()
+                if (country.isNotEmpty()) cookies.add("country=$country")
+                if (type.isNotEmpty()) cookies.add("type=$type")
+                builder.addHeader("Cookie", cookies.joinToString("; "))
+            }
+            chain.proceed(builder.build())
+        }
+        .build()
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
-        val prefType = preferences.getString(PREF_PREFERENCE_KEY, PREF_PREFERENCE_DEFAULT)!!
-        val url = "$baseUrl/$prefType".toHttpUrl().newBuilder()
-        
-        if (query.isNotBlank()) {
-            url.addQueryParameter("k", query)
-        }
-        
-        val filterList = filters.ifEmpty { getFilterList() }
-        filterList.forEach { filter ->
-            when (filter) {
-                is SortFilter -> url.addQueryParameter("sort", filter.getUriPart())
-                is DurationFilter -> url.addQueryParameter("durf", filter.getUriPart())
-                is QualityFilter -> url.addQueryParameter("qf", filter.getUriPart())
-            }
-        }
-        
-        url.addQueryParameter("p", (page - 1).toString())
-        return GET(url.build().toString())
+        val type = preferences.getString(PREF_TYPE_KEY, PREF_TYPE_DEFAULT)
+        val url = "$baseUrl/?k=${query.replace(" ", "+")}&p=$page" +
+            (if (type.isNotEmpty()) "&typef=$type" else "")
+        return GET(url, headers)
     }
 
-    override fun popularAnimeParse(response: Response) = searchAnimeParse(response)
-    override fun latestUpdatesParse(response: Response) = searchAnimeParse(response)
-    
-    override fun searchAnimeParse(response: Response): AnimesPage {
-        val document = response.asJsoup()
-        val videos = document.select(".thumb-block").map { element ->
-            SAnime.create().apply {
-                val a = element.selectFirst(".title a")
-                title = a?.attr("title") ?: "Unknown"
-                url = a?.attr("href") ?: ""
-                thumbnail_url = element.selectFirst("img")?.attr("data-src")
-            }
-        }
-        return AnimesPage(videos, true)
-    }
-
-    override fun searchAnimeSelector() = ".thumb-block"
-    override fun searchAnimeFromElement(element: Element) = SAnime.create()
-    override fun searchAnimeNextPageSelector() = ".pagination"
-
-    // ============================== Details ==============================
-    override fun animeDetailsParse(response: Response) = SAnime.create().apply {
-        val doc = response.asJsoup()
-        title = doc.select("h2.page-title").text()
-        description = doc.select(".video-metadata").text()
-    }
-
-    // ============================== Episodes ==============================
-    override fun episodeListParse(response: Response): List<SEpisode> {
-        return listOf(SEpisode.create().apply {
-            name = "Full Video"
-            url = response.request.url.toString()
-            episode_number = 1F
-        })
-    }
-
-    // ============================== Videos ==============================
-    override fun getVideoList(url: String, name: String): List<Video> {
-        return listOf(Video(url, "Default", url))
-    }
-
-    // ============================== Filters ==============================
-    override fun getFilterList() = AnimeFilterList(
-        SortFilter(),
-        DurationFilter(),
-        QualityFilter()
-    )
-
-    private open class UriPartFilter(displayName: String, val pairs: Array<Pair<String, String>>) :
-        AnimeFilter.Select<String>(displayName, pairs.map { it.first }.toTypedArray()) {
-        fun getUriPart() = pairs[state].second
-    }
-
-    private class SortFilter : UriPartFilter("Sort By", arrayOf(
-        Pair("Relevance", "relevance"),
-        Pair("Upload Date", "uploaddate"),
-        Pair("Rating", "rating"),
-        Pair("Duration", "length"),
-        Pair("Views", "views")
-    ))
-
-    private class DurationFilter : UriPartFilter("Duration", arrayOf(
-        Pair("All", "allduration"),
-        Pair("1-3 Min", "1-3min"),
-        Pair("3-10 Min", "3-10min"),
-        Pair("10 Min+", "10min_more")
-    ))
-    
-    private class QualityFilter : UriPartFilter("Quality", arrayOf(
-        Pair("All", "all"),
-        Pair("HD", "hd"),
-        Pair("1080P", "1080P")
-    ))
-
-    // ============================== Preferences ==============================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        // Pengaturan Negara
         ListPreference(screen.context).apply {
-            key = PREF_PREFERENCE_KEY
+            key = PREF_COUNTRY_KEY
+            title = "Country"
+            entries = arrayOf("Global", "Indonesia", "USA", "Japan")
+            entryValues = arrayOf("", "id", "us", "jp")
+            setDefaultValue(PREF_COUNTRY_DEFAULT)
+            summary = "%s"
+        }.also(screen::addPreference)
+
+        // Pengaturan Preferensi Konten
+        ListPreference(screen.context).apply {
+            key = PREF_TYPE_KEY
             title = "Content Preference"
             entries = arrayOf("Straight", "Gay", "Trans")
             entryValues = arrayOf("", "gay", "trans")
-            setDefaultValue(PREF_PREFERENCE_DEFAULT)
+            setDefaultValue(PREF_TYPE_DEFAULT)
+            summary = "%s"
+        }.also(screen::addPreference)
+
+        // Pengaturan Kualitas
+        ListPreference(screen.context).apply {
+            key = PREF_QUALITY_KEY
+            title = "Preferred Quality"
+            entries = arrayOf("High", "Low", "HLS")
+            entryValues = arrayOf("High", "Low", "HLS")
+            setDefaultValue(PREF_QUALITY_DEFAULT)
             summary = "%s"
         }.also(screen::addPreference)
     }
 
     companion object {
-        private const val PREF_PREFERENCE_KEY = "pref_content_type"
-        private const val PREF_PREFERENCE_DEFAULT = ""
+        private const val PREF_COUNTRY_KEY = "pref_country_key"
+        private const val PREF_COUNTRY_DEFAULT = ""
+        
+        private const val PREF_TYPE_KEY = "pref_content_type"
+        private const val PREF_TYPE_DEFAULT = ""
+        
+        private const val PREF_QUALITY_KEY = "preferred_quality"
+        private const val PREF_QUALITY_DEFAULT = "HLS"
     }
+
+    // --- Boilerplate method yang diperlukan ---
+    override fun popularAnimeSelector() = "div#main div#content div.mozaique.cust-nb-cols > div"
+    override fun popularAnimeRequest(page: Int) = GET("$baseUrl/new/$page")
+    override fun popularAnimeFromElement(element: Element): SAnime {
+        val anime = SAnime.create()
+        anime.setUrlWithoutDomain(element.select("div.thumb-inside div.thumb a").attr("href"))
+        anime.title = element.select("div.thumb-under p.title").text()
+        anime.thumbnail_url = element.select("div.thumb-inside div.thumb a img").attr("data-src")
+        return anime
+    }
+    override fun popularAnimeNextPageSelector() = "a.no-page.next-page"
+    override fun searchAnimeFromElement(element: Element) = popularAnimeFromElement(element)
+    override fun searchAnimeNextPageSelector() = popularAnimeNextPageSelector()
+    override fun animeDetailsParse(document: Document) = SAnime.create().apply { title = document.select("h2.page-title").text() }
+    override fun episodeListParse(response: Response) = listOf(SEpisode.create().apply { name = "Video"; setUrlWithoutDomain(response.request.url.toString()) })
+    
+    override fun videoListParse(response: Response): List<Video> {
+        val document = response.asJsoup()
+        val script = document.select("script:containsData(html5player.setVideoUrl)").toString()
+        return listOf(
+            Video(script.substringAfter("VideoUrlLow('").substringBefore("')"), "Low", null),
+            Video(script.substringAfter("setVideoHLS('").substringBefore("')"), "HLS", null),
+            Video(script.substringAfter("VideoUrlHigh('").substringBefore("')"), "High", null)
+        )
+    }
+
+    override fun episodeListSelector() = throw Exception("not used")
+    override fun episodeFromElement(element: Element) = throw Exception("not used")
+    override fun videoListSelector() = throw Exception("not used")
+    override fun videoUrlParse(document: Document) = throw Exception("not used")
+    override fun videoFromElement(element: Element) = throw Exception("not used")
+    override fun getFilterList() = AnimeFilterList()
 }
