@@ -27,7 +27,7 @@ class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
 
     private val preferences by getPreferencesLazy()
 
-    // ============================== Search/Popular/Latest ==============================
+    // ============================== Browser/Search ==============================
     override fun popularAnimeRequest(page: Int) = GET("$baseUrl/popular/?p=${page - 1}")
 
     override fun latestUpdatesRequest(page: Int) = GET("$baseUrl/new/?p=${page - 1}")
@@ -40,7 +40,8 @@ class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
             url.addQueryParameter("k", query)
         }
         
-        filters.forEach { filter ->
+        val filterList = filters.ifEmpty { getFilterList() }
+        filterList.forEach { filter ->
             when (filter) {
                 is SortFilter -> url.addQueryParameter("sort", filter.getUriPart())
                 is DurationFilter -> url.addQueryParameter("durf", filter.getUriPart())
@@ -54,18 +55,23 @@ class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override fun popularAnimeParse(response: Response) = searchAnimeParse(response)
     override fun latestUpdatesParse(response: Response) = searchAnimeParse(response)
+    
     override fun searchAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
         val videos = document.select(".thumb-block").map { element ->
             SAnime.create().apply {
-                val a = element.selectFirst(".title a") ?: element.select("a").first()
+                val a = element.selectFirst(".title a")
                 title = a?.attr("title") ?: "Unknown"
                 url = a?.attr("href") ?: ""
-                thumbnail_url = element.select("img").first()?.attr("data-src")
+                thumbnail_url = element.selectFirst("img")?.attr("data-src")
             }
         }
         return AnimesPage(videos, true)
     }
+
+    override fun searchAnimeSelector() = ".thumb-block"
+    override fun searchAnimeFromElement(element: Element) = SAnime.create()
+    override fun searchAnimeNextPageSelector() = ".pagination"
 
     // ============================== Details ==============================
     override fun animeDetailsParse(response: Response) = SAnime.create().apply {
@@ -84,9 +90,8 @@ class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     // ============================== Videos ==============================
-    // Perbaikan: Signature harus suspend sesuai AnimeHttpSource
-    override suspend fun getVideoList(episode: SEpisode): List<Video> {
-        return listOf(Video(episode.url, "Default", episode.url))
+    override fun getVideoList(url: String, name: String): List<Video> {
+        return listOf(Video(url, "Default", url))
     }
 
     // ============================== Filters ==============================
