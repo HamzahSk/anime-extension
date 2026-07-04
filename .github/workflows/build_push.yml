@@ -5,7 +5,7 @@ on:
     branches:
       - master
     paths:
-      - 'src/id/xvideos/**'  # Sesuaikan dengan path modul Xvideos Anda
+      - 'src/all/xvideos/**'  # Sesuaikan dengan path modul Xvideos Anda
       - 'build.gradle'
       - '.github/workflows/build_push.yml'
   workflow_dispatch:
@@ -50,14 +50,14 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           # Mem-build APK khusus untuk modul Xvideos
-          ./gradlew :src:id:xvideos:spotlessApply
-          ./gradlew :src:id:xvideos:assembleRelease
+          ./gradlew :src:all:xvideos:spotlessApply
+          ./gradlew :src:all:xvideos:assembleRelease
 
       - name: Upload Xvideos APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: "Xvideos-APK"
-          path: "src/id/xvideos/build/outputs/apk/release/*.apk"
+          path: "src/all/xvideos/build/outputs/apk/release/*.apk"
           retention-days: 7
 
       - name: Clean up CI files
