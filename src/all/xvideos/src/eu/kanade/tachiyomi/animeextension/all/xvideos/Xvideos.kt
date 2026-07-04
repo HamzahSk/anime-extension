@@ -1,4 +1,4 @@
-package eu.kanade.tachiyomi.animeextension.id.xvideos
+package eu.kanade.tachiyomi.animeextension.all.xvideos
 
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
@@ -18,7 +18,7 @@ import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
-class Xvideos : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
+class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override val name = "Xvideos"
     override val baseUrl = "https://www.xvideos.com"
@@ -27,13 +27,19 @@ class Xvideos : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
 
     private val preferences by getPreferencesLazy()
 
+    // ============================== Browser/Search ==============================
     override fun popularAnimeRequest(page: Int) = GET("$baseUrl/popular/?p=${page - 1}")
+
     override fun latestUpdatesRequest(page: Int) = GET("$baseUrl/new/?p=${page - 1}")
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         val prefType = preferences.getString(PREF_PREFERENCE_KEY, PREF_PREFERENCE_DEFAULT)!!
         val url = "$baseUrl/$prefType".toHttpUrl().newBuilder()
-        if (query.isNotBlank()) url.addQueryParameter("k", query)
+        
+        if (query.isNotBlank()) {
+            url.addQueryParameter("k", query)
+        }
+        
         val filterList = filters.ifEmpty { getFilterList() }
         filterList.forEach { filter ->
             when (filter) {
@@ -42,54 +48,86 @@ class Xvideos : ParsedAnimeHttpSource(), ConfigurableAnimeSource {
                 is QualityFilter -> url.addQueryParameter("qf", filter.getUriPart())
             }
         }
+        
         url.addQueryParameter("p", (page - 1).toString())
         return GET(url.build().toString())
     }
 
-    override fun popularAnimeSelector() = ".thumb-block"
-    override fun latestUpdatesSelector() = popularAnimeSelector()
-    override fun searchAnimeSelector() = popularAnimeSelector()
-
-    override fun popularAnimeFromElement(element: Element) = searchAnimeFromElement(element)
-    override fun latestUpdatesFromElement(element: Element) = searchAnimeFromElement(element)
-    override fun searchAnimeFromElement(element: Element) = SAnime.create().apply {
-        val a = element.selectFirst(".title a")
-        title = a?.attr("title") ?: "Unknown"
-        setUrlWithoutDomain(a?.attr("href") ?: "")
-        thumbnail_url = element.selectFirst("img")?.attr("data-src")
+    override fun popularAnimeParse(response: Response) = searchAnimeParse(response)
+    override fun latestUpdatesParse(response: Response) = searchAnimeParse(response)
+    
+    override fun searchAnimeParse(response: Response): AnimesPage {
+        val document = response.asJsoup()
+        val videos = document.select(".thumb-block").map { element ->
+            SAnime.create().apply {
+                val a = element.selectFirst(".title a")
+                title = a?.attr("title") ?: "Unknown"
+                url = a?.attr("href") ?: ""
+                thumbnail_url = element.selectFirst("img")?.attr("data-src")
+            }
+        }
+        return AnimesPage(videos, true)
     }
 
-    override fun popularAnimeNextPageSelector() = ".pagination"
-    override fun latestUpdatesNextPageSelector() = popularAnimeNextPageSelector()
-    override fun searchAnimeNextPageSelector() = popularAnimeNextPageSelector()
+    override fun searchAnimeSelector() = ".thumb-block"
+    override fun searchAnimeFromElement(element: Element) = SAnime.create()
+    override fun searchAnimeNextPageSelector() = ".pagination"
 
-    override fun animeDetailsParse(document: Document) = SAnime.create().apply {
-        title = document.select("h2.page-title").text()
-        description = document.select(".video-metadata").text()
+    // ============================== Details ==============================
+    override fun animeDetailsParse(response: Response) = SAnime.create().apply {
+        val doc = response.asJsoup()
+        title = doc.select("h2.page-title").text()
+        description = doc.select(".video-metadata").text()
     }
 
-    override fun episodeListSelector() = "body"
-    override fun episodeFromElement(element: Element) = SEpisode.create().apply {
-        name = "Full Video"
-        episode_number = 1F
-        setUrlWithoutDomain(element.baseUri())
+    // ============================== Episodes ==============================
+    override fun episodeListParse(response: Response): List<SEpisode> {
+        return listOf(SEpisode.create().apply {
+            name = "Full Video"
+            url = response.request.url.toString()
+            episode_number = 1F
+        })
     }
 
-    override fun videoListSelector() = "body"
-    override fun videoFromElement(element: Element) = Video(element.baseUri(), "Default", element.baseUri())
-    override fun videoUrlParse(document: Document) = document.location()
+    // ============================== Videos ==============================
+    override fun getVideoList(url: String, name: String): List<Video> {
+        return listOf(Video(url, "Default", url))
+    }
 
-    override fun getFilterList() = AnimeFilterList(SortFilter(), DurationFilter(), QualityFilter())
+    // ============================== Filters ==============================
+    override fun getFilterList() = AnimeFilterList(
+        SortFilter(),
+        DurationFilter(),
+        QualityFilter()
+    )
 
     private open class UriPartFilter(displayName: String, val pairs: Array<Pair<String, String>>) :
         AnimeFilter.Select<String>(displayName, pairs.map { it.first }.toTypedArray()) {
         fun getUriPart() = pairs[state].second
     }
 
-    private class SortFilter : UriPartFilter("Sort By", arrayOf(Pair("Relevance", "relevance"), Pair("Upload Date", "uploaddate"), Pair("Rating", "rating"), Pair("Duration", "length"), Pair("Views", "views")))
-    private class DurationFilter : UriPartFilter("Duration", arrayOf(Pair("All", "allduration"), Pair("1-3 Min", "1-3min"), Pair("3-10 Min", "3-10min"), Pair("10 Min+", "10min_more")))
-    private class QualityFilter : UriPartFilter("Quality", arrayOf(Pair("All", "all"), Pair("HD", "hd"), Pair("1080P", "1080P")))
+    private class SortFilter : UriPartFilter("Sort By", arrayOf(
+        Pair("Relevance", "relevance"),
+        Pair("Upload Date", "uploaddate"),
+        Pair("Rating", "rating"),
+        Pair("Duration", "length"),
+        Pair("Views", "views")
+    ))
 
+    private class DurationFilter : UriPartFilter("Duration", arrayOf(
+        Pair("All", "allduration"),
+        Pair("1-3 Min", "1-3min"),
+        Pair("3-10 Min", "3-10min"),
+        Pair("10 Min+", "10min_more")
+    ))
+    
+    private class QualityFilter : UriPartFilter("Quality", arrayOf(
+        Pair("All", "all"),
+        Pair("HD", "hd"),
+        Pair("1080P", "1080P")
+    ))
+
+    // ============================== Preferences ==============================
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         ListPreference(screen.context).apply {
             key = PREF_PREFERENCE_KEY
