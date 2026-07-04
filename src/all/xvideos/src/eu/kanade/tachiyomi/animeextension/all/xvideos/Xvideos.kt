@@ -3,20 +3,15 @@ package eu.kanade.tachiyomi.animeextension.id.xvideos
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
-import eu.kanade.tachiyomi.animesource.model.AnimeFilter
-import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
-import eu.kanade.tachiyomi.animesource.model.AnimesPage
-import eu.kanade.tachiyomi.animesource.model.SAnime
-import eu.kanade.tachiyomi.animesource.model.SEpisode
-import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.animesource.model.*
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.asJsoup // Import penting untuk asJsoup
 import keiyoushi.utils.getPreferencesLazy
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Element
-
 
 class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
 
@@ -27,7 +22,7 @@ class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
 
     private val preferences by getPreferencesLazy()
 
-    // ============================== Browser/Search ==============================
+    // ============================== Search/Popular/Latest ==============================
     override fun popularAnimeRequest(page: Int) = GET("$baseUrl/popular/?p=${page - 1}")
 
     override fun latestUpdatesRequest(page: Int) = GET("$baseUrl/new/?p=${page - 1}")
@@ -40,8 +35,7 @@ class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
             url.addQueryParameter("k", query)
         }
         
-        val filterList = filters.ifEmpty { getFilterList() }
-        filterList.forEach { filter ->
+        filters.forEach { filter ->
             when (filter) {
                 is SortFilter -> url.addQueryParameter("sort", filter.getUriPart())
                 is DurationFilter -> url.addQueryParameter("durf", filter.getUriPart())
@@ -55,23 +49,18 @@ class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override fun popularAnimeParse(response: Response) = searchAnimeParse(response)
     override fun latestUpdatesParse(response: Response) = searchAnimeParse(response)
-    
     override fun searchAnimeParse(response: Response): AnimesPage {
         val document = response.asJsoup()
         val videos = document.select(".thumb-block").map { element ->
             SAnime.create().apply {
-                val a = element.selectFirst(".title a")
+                val a = element.selectFirst(".title a") ?: element.select("a").first()
                 title = a?.attr("title") ?: "Unknown"
                 url = a?.attr("href") ?: ""
-                thumbnail_url = element.selectFirst("img")?.attr("data-src")
+                thumbnail_url = element.select("img").first()?.attr("data-src")
             }
         }
         return AnimesPage(videos, true)
     }
-
-    override fun searchAnimeSelector() = ".thumb-block"
-    override fun searchAnimeFromElement(element: Element) = SAnime.create()
-    override fun searchAnimeNextPageSelector() = ".pagination"
 
     // ============================== Details ==============================
     override fun animeDetailsParse(response: Response) = SAnime.create().apply {
@@ -90,8 +79,9 @@ class Xvideos : AnimeHttpSource(), ConfigurableAnimeSource {
     }
 
     // ============================== Videos ==============================
-    override fun getVideoList(url: String, name: String): List<Video> {
-        return listOf(Video(url, "Default", url))
+    // Perbaikan: Signature harus suspend sesuai AnimeHttpSource
+    override suspend fun getVideoList(episode: SEpisode): List<Video> {
+        return listOf(Video(episode.url, "Default", episode.url))
     }
 
     // ============================== Filters ==============================
