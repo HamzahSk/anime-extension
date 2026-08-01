@@ -1,16 +1,98 @@
+# Task: Repair Xvideos Extension (`src/all/xvideos`)
 
-# Task: Fix Streaming Playback for MovieBox Extension (src/all/moviebox)
-Ekstensi MovieBox saat ini sudah selesai dibangun. Home, Search, Pagination, dan perbaikan halaman detail (termasuk pemisahan episode Sub/Dub) sudah berfungsi dengan baik. Jangan ubah bagian tersebut.
-**Fokus Tugas Saat Ini:**
-Perbaiki fungsi ekstraksi dan pemutaran video (*streaming*). Saat ini *streaming* gagal diekstrak karena *endpoint* pemutaran membutuhkan otentikasi *cookie* tambahan.
-**Instruksi Detail:**
- 1. **Tambahkan Cookie Streaming:** Untuk melakukan *request* ke *endpoint* video (m3u8/mp4) dan *subtitle*, kamu **wajib** menyisipkan *cookie* token dan mb_token ke dalam HTTP Headers.
- 2. **Implementasi:** Tangkap dan simpan *cookie* token dan mb_token yang didapat dari halaman/API sebelumnya, lalu implementasikan penambahan *cookie* ini di dalam *interceptor* atau pada *header* yang dikirim oleh *video extractor* HTTP client.
- 3. **Validasi:** Pastikan *request* ke *endpoint streaming* berhasil merespons dengan *link* video yang valid dan bisa diputar, lengkap dengan *subtitle*-nya.
-Setelah modifikasi selesai, jalankan perintah berikut untuk memastikan tidak ada kode yang *error*:
+Analisis dan perbaiki ekstensi pada:
+
+```text
+src/all/xvideos
+```
+
+Gunakan ekstensi lain yang sudah berhasil melakukan ekstraksi HLS (`.m3u8`) sebagai referensi implementasi, dan tetap mengikuti arsitektur repository, coding style, serta penggunaan `AnimeHttpSource`, `OkHttpClient`, headers, cookies, interceptor, dan video extractor yang sudah tersedia.
+
+## HLS Extraction
+
+Saat ini URL video yang diperoleh hanya berupa **master playlist**, contohnya:
+
+```text
+https://hls-cdn77.xvideos-cdn.com/.../hls.m3u8
+```
+
+Ketika URL tersebut di-request, responsenya berupa daftar beberapa kualitas:
+
+```m3u8
+#EXTM3U
+
+#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=763904,RESOLUTION=854x480,NAME="480p"
+hls-480p-9d4e7.m3u8
+
+#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=2760704,RESOLUTION=1920x1080,NAME="1080p"
+hls-1080p-f5327.m3u8
+
+#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=444416,RESOLUTION=640x360,NAME="360p"
+hls-360p-a9585.m3u8
+```
+
+Perbaiki extractor agar:
+
+1. Melakukan request ke master playlist (`hls.m3u8`).
+2. Mem-parse seluruh entry `#EXT-X-STREAM-INF`.
+3. Mengambil nama kualitas (`NAME`) atau resolusi sebagai label video.
+4. Menggabungkan URL relatif menjadi URL absolut berdasarkan lokasi master playlist.
+
+Contoh:
+
+Master playlist:
+
+```text
+https://hls-cdn77.xvideos-cdn.com/.../hls.m3u8
+```
+
+Entry:
+
+```text
+hls-480p-9d4e7.m3u8
+```
+
+Harus menjadi:
+
+```text
+https://hls-cdn77.xvideos-cdn.com/.../hls-480p-9d4e7.m3u8
+```
+
+5. Mengembalikan seluruh kualitas sebagai daftar `Video`, bukan hanya master playlist.
+6. Pastikan setiap stream dapat diputar langsung oleh aplikasi.
+
+## General Fixes
+
+Jika terdapat perubahan struktur website, lakukan analisis ulang dan sesuaikan scraper, termasuk:
+
+- Request & Response
+- Parsing halaman
+- Search & Pagination
+- Headers
+- Referer
+- User-Agent
+- Cookies
+- Interceptor
+- Video Extractor
+
+Gunakan helper dan utilitas yang sudah tersedia di repository. Hindari membuat implementasi baru jika repository sudah memiliki pola serupa.
+
+## Requirements
+
+- Jangan mengubah API publik extension apabila tidak diperlukan.
+- Pertahankan style coding repository.
+- Gunakan extractor HLS yang konsisten dengan extension lain.
+- Hindari hardcode kualitas video.
+- Parsing harus dinamis sehingga tetap bekerja jika daftar kualitas berubah (240p, 360p, 480p, 720p, 1080p, dst).
+
+## Validation
+
+Pastikan seluruh perubahan lolos:
+
 ```bash
 ./gradlew spotlessApply
 ./gradlew spotlessCheck
 ./gradlew testDebugUnitTest
-
 ```
+
+Perbaiki seluruh error atau warning hingga seluruh proses selesai tanpa kegagalan.
