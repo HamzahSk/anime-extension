@@ -1,45 +1,40 @@
-# Task: Create MovieBox Extension (`src/all/moviebox`)
+
+# Task: Create & Fix MovieBox Extension (`src/all/moviebox`)
 
 Buat ekstensi baru untuk:
 
 ```text
-https://themoviebox.xyz/
+[https://themoviebox.xyz/](https://themoviebox.xyz/)
+
 ```
-
-Belum ada implementasi sebelumnya, jadi lakukan analisis dan scraping dari nol.
-
-Gunakan ekstensi movie lain di repository sebagai referensi arsitektur, coding style, HTTP client, helper, filter, dan video extractor. Jangan menyalin scraper, sesuaikan dengan struktur website MovieBox saat ini.
-
-## Requirements
-
-- Analisis website secara menyeluruh menggunakan DevTools/Network.
-- Gunakan endpoint API/AJAX jika tersedia, jangan hanya scraping HTML.
-- Implementasikan:
-  - Home
-  - Search + Pagination
-  - Movie/TV Detail
-  - Episode (jika ada)
-  - Streaming
-- Tambahkan filter (Genre, Country, Year, Quality, dll.) jika website mendukungnya.
-- Pastikan seluruh server video berhasil diekstrak dan dapat diputar (m3u8/mp4/embed sesuai kebutuhan).
-- Gunakan helper, extractor, dan utilitas yang sudah tersedia di repository sebisa mungkin.
-- Tangani headers, referer, cookies, interceptor, atau proteksi lain jika diperlukan.
-
+Fokus utama adalah membangun ekstensi dari awal dan memperbaiki bug pada halaman detail, khususnya terkait pemanggilan daftar episode untuk opsi Dub dan Sub.
+Gunakan ekstensi movie lain di repository sebagai referensi arsitektur, coding style, HTTP client, helper, filter, dan video extractor. Jangan menyalin scraper secara membabi buta, sesuaikan dengan struktur API dari website MovieBox saat ini.
+## Requirements & Analysis Task
+Website ini menggunakan API JSON (BFF API), bukan sekadar HTML. Kamu **wajib** melakukan analisis mandiri terhadap struktur JSON dan endpoint mereka.
+ 1. **Analisis Halaman Detail & Episode (Bug Fix):**
+   Terdapat masalah pada ekstraksi episode (membedakan Sub, Dub, dll.).
+   Silakan analisis struktur JSON dari endpoint detail berikut sebagai referensi:
+   https://h5-api.aoneroom.com/wefeed-h5api-bff/detail?detailPath=attack-on-titan-c0p85b63Xl2
+   *Tugasmu:* Pelajari respons JSON tersebut untuk mengetahui bagaimana data *Season*, *Episode*, dan penanda *Sub/Dub* disimpan. Petakan data tersebut dengan benar agar daftar episode muncul secara akurat di aplikasi.
+ 2. **Analisis Endpoint Pemutaran (Streaming & Subtitle):**
+   Endpoint URL untuk memutar video (m3u8/mp4) dan mengambil subtitle masih belum dipastikan.
+   *Tugasmu:* Gunakan DevTools/Network untuk melacak *request* apa yang dipanggil saat sebuah episode diputar. Analisis parameter apa saja yang dibutuhkan oleh endpoint streaming dan subtitle tersebut (misalnya ID, format, sign type, dll.), lalu ambil nilai parameternya dari JSON halaman detail yang sudah kamu ekstrak sebelumnya.
+ 3. **Fitur Ekstensi Lainnya:**
+   * Implementasikan Home, Search + Pagination.
+   * Tambahkan filter (Genre, Country, Year, Quality, dll.) jika API website mendukungnya.
+   * Gunakan helper, extractor, dan utilitas yang sudah tersedia di repository sebisa mungkin.
+   * Tangani headers, referer, cookies, interceptor, atau proteksi lain jika diperlukan.
 ## Validation
-
 Pastikan:
-
-- Scraping berhasil mengambil data terbaru.
-- Search, filter, dan pagination berfungsi.
-- Detail dan episode berhasil diparsing.
-- Streaming benar-benar bisa diputar tanpa error.
-
-Lalu jalankan:
-
+ * Scraping berhasil mengambil data terbaru menggunakan API mereka.
+ * Search, filter, dan pagination berfungsi.
+ * Halaman detail dan pemisahan episode (Sub/Dub) berhasil diparsing dengan sempurna berdasarkan analisis JSON-mu.
+ * Streaming video berhasil diekstrak dan benar-benar bisa diputar beserta subtitle-nya.
+Lalu jalankan perintah berikut:
 ```bash
 ./gradlew spotlessApply
 ./gradlew spotlessCheck
 ./gradlew testDebugUnitTest
-```
 
+```
 Perbaiki seluruh error hingga build dan test selesai tanpa kegagalan.
