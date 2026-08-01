@@ -23,4 +23,5 @@ dependencies {
 
     testImplementation(libs.bundles.common)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
 }
