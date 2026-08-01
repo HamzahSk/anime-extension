@@ -1,24 +1,19 @@
-# Task: Repair Xvideos Extension (`src/all/xvideos`)
+Task: Repair Xvideos Extension (src/all/xvideos)
 
-Analisis dan perbaiki ekstensi pada:
+Analisis dan perbaiki extension pada:
 
-```text
 src/all/xvideos
-```
 
-Gunakan ekstensi lain yang sudah berhasil melakukan ekstraksi HLS (`.m3u8`) sebagai referensi implementasi, dan tetap mengikuti arsitektur repository, coding style, serta penggunaan `AnimeHttpSource`, `OkHttpClient`, headers, cookies, interceptor, dan video extractor yang sudah tersedia.
+Gunakan extension lain di repository yang sudah berhasil melakukan ekstraksi HLS (.m3u8) sebagai referensi implementasi. Tetap ikuti arsitektur repository, coding style, serta penggunaan AnimeHttpSource, OkHttpClient, headers, cookies, interceptor, dan HLS/video extractor yang sudah tersedia.
 
-## HLS Extraction
+Problem
 
-Saat ini URL video yang diperoleh hanya berupa **master playlist**, contohnya:
+Saat ini extractor hanya mengembalikan master playlist:
 
-```text
 https://hls-cdn77.xvideos-cdn.com/.../hls.m3u8
-```
 
-Ketika URL tersebut di-request, responsenya berupa daftar beberapa kualitas:
+Padahal file tersebut hanyalah variant playlist yang berisi daftar kualitas video, misalnya:
 
-```m3u8
 #EXTM3U
 
 #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=763904,RESOLUTION=854x480,NAME="480p"
@@ -29,70 +24,127 @@ hls-1080p-f5327.m3u8
 
 #EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=444416,RESOLUTION=640x360,NAME="360p"
 hls-360p-a9585.m3u8
-```
+
+Sedangkan setiap file hasil di atas (hls-480p-*.m3u8, hls-1080p-*.m3u8, dll) merupakan media playlist yang berisi segmen .ts, contohnya:
+
+#EXTM3U
+#EXTINF:10,
+hls-480p-58d1c0.ts
+#EXTINF:10,
+hls-480p-58d1c1.ts
+...
+#EXT-X-ENDLIST
+
+Media playlist tidak perlu diparse lagi menjadi daftar .ts. Player HLS akan menangani segmen tersebut secara otomatis.
+
+Required Fix
 
 Perbaiki extractor agar:
 
-1. Melakukan request ke master playlist (`hls.m3u8`).
-2. Mem-parse seluruh entry `#EXT-X-STREAM-INF`.
-3. Mengambil nama kualitas (`NAME`) atau resolusi sebagai label video.
-4. Menggabungkan URL relatif menjadi URL absolut berdasarkan lokasi master playlist.
+1. Request ke URL master playlist (hls.m3u8).
+
+
+2. Parse seluruh pasangan:
+
+#EXT-X-STREAM-INF
+
+URL playlist yang berada tepat pada baris berikutnya.
+
+
+
+3. Ambil label kualitas secara dinamis:
+
+Prioritaskan atribut NAME.
+
+Jika tidak ada, gunakan RESOLUTION.
+
+Jika keduanya tidak ada, gunakan BANDWIDTH.
+
+
+
+4. Resolve URL relatif menjadi URL absolut menggunakan URL master playlist.
+
+
 
 Contoh:
 
-Master playlist:
+Master:
 
-```text
 https://hls-cdn77.xvideos-cdn.com/.../hls.m3u8
-```
 
 Entry:
 
-```text
 hls-480p-9d4e7.m3u8
-```
 
-Harus menjadi:
+Hasil:
 
-```text
 https://hls-cdn77.xvideos-cdn.com/.../hls-480p-9d4e7.m3u8
-```
 
-5. Mengembalikan seluruh kualitas sebagai daftar `Video`, bukan hanya master playlist.
-6. Pastikan setiap stream dapat diputar langsung oleh aplikasi.
+5. Buat satu objek Video untuk setiap variant/media playlist, misalnya:
 
-## General Fixes
 
-Jika terdapat perubahan struktur website, lakukan analisis ulang dan sesuaikan scraper, termasuk:
 
-- Request & Response
-- Parsing halaman
-- Search & Pagination
-- Headers
-- Referer
-- User-Agent
-- Cookies
-- Interceptor
-- Video Extractor
+360p
 
-Gunakan helper dan utilitas yang sudah tersedia di repository. Hindari membuat implementasi baru jika repository sudah memiliki pola serupa.
+480p
 
-## Requirements
+720p
 
-- Jangan mengubah API publik extension apabila tidak diperlukan.
-- Pertahankan style coding repository.
-- Gunakan extractor HLS yang konsisten dengan extension lain.
-- Hindari hardcode kualitas video.
-- Parsing harus dinamis sehingga tetap bekerja jika daftar kualitas berubah (240p, 360p, 480p, 720p, 1080p, dst).
+1080p
 
-## Validation
+
+6. URL pada setiap Video harus berupa media playlist (*.m3u8), bukan master playlist dan bukan daftar .ts.
+
+
+7. Pastikan seluruh kualitas dapat diputar langsung oleh aplikasi menggunakan extractor/player HLS yang sudah digunakan extension lain di repository.
+
+
+
+Requirements
+
+Jangan mengubah public API extension kecuali benar-benar diperlukan.
+
+Pertahankan coding style repository.
+
+Gunakan utilitas/extractor HLS yang sudah ada bila memungkinkan.
+
+Jangan hardcode daftar kualitas.
+
+Parsing harus sepenuhnya dinamis sehingga tetap bekerja jika server menambah atau mengurangi kualitas (240p, 360p, 480p, 720p, 1080p, 1440p, dst).
+
+Tangani URL relatif maupun absolut.
+
+Abaikan komentar atau directive HLS yang tidak relevan.
+
+
+Expected Result
+
+Jika master playlist berisi:
+
+360p -> hls-360p.m3u8
+480p -> hls-480p.m3u8
+720p -> hls-720p.m3u8
+1080p -> hls-1080p.m3u8
+
+Maka extractor harus mengembalikan empat objek Video, masing-masing menunjuk ke:
+
+.../hls-360p.m3u8
+
+.../hls-480p.m3u8
+
+.../hls-720p.m3u8
+
+.../hls-1080p.m3u8
+
+
+bukan satu Video yang masih menunjuk ke hls.m3u8.
+
+Validation
 
 Pastikan seluruh perubahan lolos:
 
-```bash
 ./gradlew spotlessApply
 ./gradlew spotlessCheck
 ./gradlew testDebugUnitTest
-```
 
-Perbaiki seluruh error atau warning hingga seluruh proses selesai tanpa kegagalan.
+Perbaiki seluruh error maupun warning hingga seluruh proses selesai tanpa kegagalan.
