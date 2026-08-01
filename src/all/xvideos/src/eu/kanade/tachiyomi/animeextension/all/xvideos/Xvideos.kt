@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.animeextension.all.xvideos
 
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
-import aniyomi.lib.playlistutils.PlaylistUtils
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.SAnime
@@ -11,6 +10,8 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.util.asJsoup
+import keiyoushi.utils.UrlUtils
+import keiyoushi.utils.bodyString
 import keiyoushi.utils.getPreferencesLazy
 import okhttp3.Headers
 import okhttp3.Request
@@ -32,8 +33,6 @@ class Xvideos :
     override val supportsLatest = false
 
     private val preferences by getPreferencesLazy()
-
-    private val playlistUtils by lazy { PlaylistUtils(client, headers) }
 
     override fun headersBuilder(): Headers.Builder = super.headersBuilder()
         .set("Referer", "$baseUrl/")
@@ -143,20 +142,36 @@ class Xvideos :
             if (low.isNotEmpty()) add(Video(low, "Low", low, videoHeaders))
             if (high.isNotEmpty() && high != low) add(Video(high, "High", high, videoHeaders))
             if (hls.isNotEmpty()) {
-                val hlsVideos = runCatching {
-                    playlistUtils.extractFromHls(
-                        playlistUrl = hls,
-                        masterHeaders = videoHeaders,
-                        videoHeaders = videoHeaders,
-                        videoNameGen = { "HLS - $it" },
-                    )
-                }.getOrElse { emptyList() }
+                val hlsVideos = extractFromHls(hls)
                 if (hlsVideos.isEmpty()) {
                     add(Video(hls, "HLS", hls, videoHeaders))
                 } else {
                     addAll(hlsVideos)
                 }
             }
+        }
+    }
+
+    private fun extractFromHls(hlsUrl: String): List<Video> {
+        val masterPlaylist = runCatching {
+            client.newCall(GET(hlsUrl, videoHeaders)).execute().bodyString()
+        }.getOrElse { return emptyList() }
+
+        if (PLAYLIST_STREAM_INF !in masterPlaylist) {
+            return listOf(Video(hlsUrl, "HLS", hlsUrl, videoHeaders))
+        }
+
+        return masterPlaylist.substringAfter(PLAYLIST_STREAM_INF).split(PLAYLIST_STREAM_INF).mapNotNull { stream ->
+            val quality = stream.substringAfter("NAME=\"", "").substringBefore("\"")
+                .ifBlank {
+                    stream.substringAfter("RESOLUTION=", "").substringBefore(",").substringAfter("x")
+                        .takeIf { it.isNotBlank() }?.let { "${it}p" }.orEmpty()
+                }
+                .ifBlank { "HLS" }
+            val videoUrl = stream.substringAfter("\n").substringBefore("\n").trimEnd().let { url ->
+                UrlUtils.fixUrl(url, hlsUrl) ?: return@mapNotNull null
+            }
+            Video(videoUrl, "HLS - $quality", videoUrl, videoHeaders)
         }
     }
 
@@ -215,6 +230,8 @@ class Xvideos :
 
         private const val PREF_QUALITY_KEY = "preferred_quality"
         private const val PREF_QUALITY_DEFAULT = "HLS"
+
+        private const val PLAYLIST_STREAM_INF = "#EXT-X-STREAM-INF:"
 
         private val RESOLUTION_REGEX = Regex("""(\d{3,4})p""")
     }

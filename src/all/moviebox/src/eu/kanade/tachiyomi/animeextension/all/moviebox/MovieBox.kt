@@ -55,6 +55,7 @@ class MovieBox(
     }
 
     private var authToken: String? = null
+    private var streamCookie: String? = null
 
     // ============================== Popular ===============================
 
@@ -197,15 +198,32 @@ class MovieBox(
             client.newCall(GET(homeUrl, apiHeaders))
                 .awaitSuccess()
                 .use { response ->
-                    val xUser = response.headers["x-user"] ?: return@use null
-                    json.parseToJsonElement(xUser)
-                        .jsonObject["token"]
-                        ?.jsonPrimitive
-                        ?.content
+                    val cookieToken = extractCookieValue(response.headers.values("Set-Cookie"), "token")
+                    val xUserToken = response.headers["x-user"]
+                        ?.let { json.parseToJsonElement(it).jsonObject["token"]?.jsonPrimitive?.content }
+                    cookieToken ?: xUserToken
                 }
         }.getOrNull()
 
-        return token.orEmpty().also { authToken = it.ifBlank { null } }
+        return token.orEmpty().also {
+            authToken = it.ifBlank { null }
+            if (it.isNotBlank()) {
+                streamCookie = buildStreamingCookie(it)
+            }
+        }
+    }
+
+    private fun buildStreamingCookie(token: String): String = "token=$token; mb_token=%22$token%22"
+
+    private fun streamingCookies(): String = streamCookie.orEmpty()
+
+    private fun extractCookieValue(setCookieHeaders: List<String>, name: String): String? {
+        for (header in setCookieHeaders) {
+            val pair = header.substringBefore(";").trim()
+            val (key, value) = pair.split("=", limit = 2).let { it[0] to it.getOrNull(1).orEmpty() }
+            if (key == name) return value
+        }
+        return null
     }
 
     // =========================== Anime Details ============================
@@ -303,7 +321,7 @@ class MovieBox(
             .addQueryParameter("streamSignType", "1")
             .build()
 
-        val play = client.get(url, playHeaders()).parseAs<ApiResponse<PlayData>>(json).data
+        val play = client.get(url, playHeaders(data.detailPath)).parseAs<ApiResponse<PlayData>>(json).data
             ?: return emptyList()
 
         val videos = mutableListOf<Video>()
@@ -345,13 +363,19 @@ class MovieBox(
             .build()
 
         return runCatching {
-            client.get(url, apiHeaders).parseAs<ApiResponse<CaptionData>>(json).data
+            client.get(url, captionHeaders()).parseAs<ApiResponse<CaptionData>>(json).data
                 ?.captions
                 .orEmpty()
                 .filter { !it.url.isNullOrBlank() }
                 .map { Track(it.url!!, it.lanName ?: it.lan ?: "Subtitle") }
         }.getOrDefault(emptyList())
     }
+
+    private fun captionHeaders(): Headers = apiHeaders.newBuilder()
+        .apply {
+            streamingCookies().takeIf { it.isNotBlank() }?.let { add("Cookie", it) }
+        }
+        .build()
 
     // ============================== Filters ===============================
 
@@ -388,15 +412,17 @@ class MovieBox(
         return AnimesPage(map { it.toSAnime() }, hasNextPage)
     }
 
-    private suspend fun playHeaders(): Headers {
+    private suspend fun playHeaders(detailPath: String): Headers {
         val token = getAuthToken()
         return apiHeaders.newBuilder()
             .apply {
                 if (token.isNotBlank()) add("Authorization", "Bearer $token")
+                set("Referer", "$baseUrl/movies/$detailPath")
                 add("X-Client-Info", """{"timezone":"UTC"}""")
                 add("X-Source", "")
                 add("X-Vip-Restrict", "1")
                 add("X-Request-Lang", "en")
+                streamingCookies().takeIf { it.isNotBlank() }?.let { add("Cookie", it) }
             }
             .build()
     }
@@ -406,7 +432,8 @@ class MovieBox(
             if (!stream.signHeaderKey.isNullOrBlank() && !stream.signCookie.isNullOrBlank()) {
                 add(stream.signHeaderKey, stream.signCookie)
             }
-            add("Referer", "$baseUrl/detail/$detailPath")
+            add("Referer", "$baseUrl/movies/$detailPath")
+            streamingCookies().takeIf { it.isNotBlank() }?.let { add("Cookie", it) }
         }
         .build()
 
