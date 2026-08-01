@@ -17,6 +17,7 @@ serialization = "1.7.3"
 [libraries]
 android-gradle = { module = "com.android.tools.build:gradle", version.ref = "android-gradle" }
 junit = { module = "junit:junit", version.ref = "junit" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin-gradle" }
 kotlin-gradle = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin-gradle" }
 ktlint-bom = { module = "com.pinterest.ktlint:ktlint-bom", version.ref = "ktlint" }
 spotless-gradle = { module = "com.diffplug.spotless:spotless-plugin-gradle", version.ref = "spotless" }

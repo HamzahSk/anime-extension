@@ -5,12 +5,13 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 object UrlUtils {
 
     private val firstHttpsRegex by lazy { Regex("""^.*(?=https?://)""") }
+    private val concatenatedUrlRegex by lazy { Regex("""https?://[^/\s?#]+(?=https?://)""") }
 
     fun fixUrl(url: String): String? = when {
         url.isEmpty() -> null
-        url.startsWith("http") ||
-            // Do not fix JSON objects when passed as urls.
-            url.startsWith("{\"") -> url
+        // Do not fix JSON objects when passed as urls.
+        url.startsWith("{\"") -> url
+        url.startsWith("http") -> url.replaceFirst(concatenatedUrlRegex, "")
         url.startsWith("//") -> "https:$url"
         else -> url.replaceFirst(firstHttpsRegex, "")
     }
