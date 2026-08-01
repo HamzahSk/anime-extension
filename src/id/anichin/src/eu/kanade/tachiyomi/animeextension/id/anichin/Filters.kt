@@ -18,48 +18,45 @@ class SeasonList(seasons: List<Season>) : AnimeFilter.Group<Season>("Season", se
 class Studio(name: String, val id: String) : AnimeFilter.CheckBox(name)
 class StudioList(studios: List<Studio>) : AnimeFilter.Group<Studio>("Studio", studios)
 
-class StatusFilter :
-    UriPartFilter(
-        "Status",
-        arrayOf(
-            Pair("All", ""),
-            Pair("Ongoing", "ongoing"),
-            Pair("Completed", "completed"),
-            Pair("Upcoming", "upcoming"),
-            Pair("Hiatus", "hiatus"),
-        ),
-    )
+class StatusFilter : UriPartFilter(
+    "Status",
+    arrayOf(
+        Pair("All", ""),
+        Pair("Ongoing", "ongoing"),
+        Pair("Completed", "completed"),
+        Pair("Upcoming", "upcoming"),
+        Pair("Hiatus", "hiatus"),
+    ),
+)
 
-class TypeFilter :
-    UriPartFilter(
-        "Type",
-        arrayOf(
-            Pair("All", ""),
-            Pair("Anime", "anime"),
-            Pair("OVA", "ova"),
-            Pair("Movie", "movie"),
-            Pair("Live Action", "live action"),
-            Pair("Special", "special"),
-            Pair("BD", "bd"),
-            Pair("ONA", "ona"),
-            Pair("Music", "music"),
-            Pair("Donghua", "donghua"),
-        ),
-    )
+class TypeFilter : UriPartFilter(
+    "Type",
+    arrayOf(
+        Pair("All", ""),
+        Pair("Anime", "anime"),
+        Pair("OVA", "ova"),
+        Pair("Movie", "movie"),
+        Pair("Live Action", "live action"),
+        Pair("Special", "special"),
+        Pair("BD", "bd"),
+        Pair("ONA", "ona"),
+        Pair("Music", "music"),
+        Pair("Donghua", "donghua"),
+    ),
+)
 
-class OrderFilter :
-    UriPartFilter(
-        "Order by",
-        arrayOf(
-            Pair("Default", ""),
-            Pair("A-Z", "title"),
-            Pair("Z-A", "titlereverse"),
-            Pair("Latest Update", "update"),
-            Pair("Latest Added", "latest"),
-            Pair("Popular", "popular"),
-            Pair("Rating", "rating"),
-        ),
-    )
+class OrderFilter : UriPartFilter(
+    "Order by",
+    arrayOf(
+        Pair("Default", ""),
+        Pair("A-Z", "title"),
+        Pair("Z-A", "titlereverse"),
+        Pair("Latest Update", "update"),
+        Pair("Latest Added", "latest"),
+        Pair("Popular", "popular"),
+        Pair("Rating", "rating"),
+    ),
+)
 
 object AnichinFilters {
     val GENRES = listOf(

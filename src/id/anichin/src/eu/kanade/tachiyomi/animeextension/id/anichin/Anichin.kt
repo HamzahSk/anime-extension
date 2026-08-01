@@ -36,8 +36,8 @@ class Anichin :
         val hasActiveFilters = filters.any { filter ->
             when (filter) {
                 is AnimeFilter.Select<*> -> filter.state != 0
-                is AnimeFilter.Group<*> -> filter.state.any {
-                    (it as? AnimeFilter.CheckBox)?.state == true
+                is AnimeFilter.Group<*> -> filter.state.any { 
+                    (it as? AnimeFilter.CheckBox)?.state == true 
                 }
                 else -> false
             }
@@ -45,7 +45,7 @@ class Anichin :
 
         val urlBuilder = if (hasActiveFilters || query.isBlank()) {
             val builder = "$baseUrl/seri".toHttpUrl().newBuilder()
-
+            
             if (page > 1) {
                 builder.addPathSegment("page")
                 builder.addPathSegment(page.toString())
@@ -106,7 +106,7 @@ class Anichin :
                 addQueryParameter("s", query)
             }
         }
-
+        
         return GET(urlBuilder.build().toString())
     }
 
@@ -133,7 +133,7 @@ class Anichin :
     override fun episodeFromElement(element: Element) = SEpisode.create().apply {
         setUrlWithoutDomain(element.attr("href"))
         val epText = element.selectFirst(".epl-num")?.text().orEmpty()
-
+        
         val numOnly = epText.replace("ep", "", true)
             .replace("episode", "", true)
             .replace("end", "", true)
