@@ -157,22 +157,28 @@ class Xvideos :
             client.newCall(GET(hlsUrl, videoHeaders)).execute().bodyString()
         }.getOrElse { return emptyList() }
 
+        // If the playlist has no variants, it's already a media playlist and can be played directly.
         if (PLAYLIST_STREAM_INF !in masterPlaylist) {
             return listOf(Video(hlsUrl, "HLS", hlsUrl, videoHeaders))
         }
 
-        return masterPlaylist.substringAfter(PLAYLIST_STREAM_INF).split(PLAYLIST_STREAM_INF).mapNotNull { stream ->
-            val quality = stream.substringAfter("NAME=\"", "").substringBefore("\"")
-                .ifBlank {
-                    stream.substringAfter("RESOLUTION=", "").substringBefore(",").substringAfter("x")
-                        .takeIf { it.isNotBlank() }?.let { "${it}p" }.orEmpty()
-                }
-                .ifBlank { "HLS" }
-            val videoUrl = stream.substringAfter("\n").substringBefore("\n").trimEnd().let { url ->
-                UrlUtils.fixUrl(url, hlsUrl) ?: return@mapNotNull null
-            }
-            Video(videoUrl, "HLS - $quality", videoUrl, videoHeaders)
-        }
+        return STREAM_INF_REGEX.findAll(masterPlaylist).mapNotNull { match ->
+            val videoUrl = UrlUtils.fixUrl(match.groupValues[2].trim(), hlsUrl)
+                ?: return@mapNotNull null
+            Video(videoUrl, "HLS - ${getQualityLabel(match.groupValues[1])}", videoUrl, videoHeaders)
+        }.toList()
+    }
+
+    private fun getQualityLabel(attributes: String): String {
+        val name = NAME_REGEX.find(attributes)?.groupValues?.let { values ->
+            values[1].ifBlank { values[2] }
+        }?.takeIf { it.isNotBlank() }
+        if (name != null) return name
+
+        val resolution = PLAYLIST_RESOLUTION_REGEX.find(attributes)?.groupValues?.get(2)
+        if (resolution != null) return "${resolution}p"
+
+        return BANDWIDTH_REGEX.find(attributes)?.groupValues?.get(1) ?: "Unknown"
     }
 
     override fun videoListSelector(): String = throw Exception("not used")
@@ -231,7 +237,12 @@ class Xvideos :
         private const val PREF_QUALITY_KEY = "preferred_quality"
         private const val PREF_QUALITY_DEFAULT = "HLS"
 
-        private const val PLAYLIST_STREAM_INF = "#EXT-X-STREAM-INF:"
+        private const val PLAYLIST_STREAM_INF = "#EXT-X-STREAM-INF"
+
+        private val STREAM_INF_REGEX = Regex("""#EXT-X-STREAM-INF:?([^\r\n]+)\r?\n[ \t]*([^#\r\n][^\r\n]*)""")
+        private val NAME_REGEX = Regex("""NAME="([^"]*)"|NAME=([^,"\s]+)""")
+        private val PLAYLIST_RESOLUTION_REGEX = Regex("""RESOLUTION=(\d+)[xX](\d+)""")
+        private val BANDWIDTH_REGEX = Regex("""BANDWIDTH=(\d+)""")
 
         private val RESOLUTION_REGEX = Regex("""(\d{3,4})p""")
     }
