@@ -108,7 +108,7 @@ data class SubjectObject(
     val stills: JsonElement? = null,
     val postTitle: String? = null,
     val season: Int? = null,
-    val dubs: List<String>? = null,
+    val dubs: List<DubObject>? = null,
     val accessStrategy: JsonElement? = null,
 ) {
     fun toSAnime(): SAnime {
@@ -141,6 +141,16 @@ data class SubjectObject(
         return anime
     }
 }
+
+@Serializable
+data class DubObject(
+    val subjectId: String? = null,
+    val lanName: String? = null,
+    val lanCode: String? = null,
+    val original: Boolean? = null,
+    val type: Int? = null,
+    val detailPath: String? = null,
+)
 
 @Serializable
 data class TrendingData(
@@ -277,17 +287,19 @@ data class EpisodeData(
     val se: Int,
     val ep: Int,
     val detailPath: String,
+    val lanName: String = "",
 ) {
-    fun encode() = "$subjectId@$se@$ep@$detailPath"
+    fun encode() = "$subjectId@$se@$ep@$detailPath@$lanName"
 
     companion object {
         fun decode(url: String): EpisodeData {
-            val parts = url.split("@", limit = 4)
+            val parts = url.split("@", limit = 5)
             return EpisodeData(
                 subjectId = parts.getOrNull(0).orEmpty(),
                 se = parts.getOrNull(1)?.toIntOrNull() ?: 0,
                 ep = parts.getOrNull(2)?.toIntOrNull() ?: 0,
                 detailPath = parts.getOrNull(3).orEmpty(),
+                lanName = parts.getOrNull(4).orEmpty(),
             )
         }
     }

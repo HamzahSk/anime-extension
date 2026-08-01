@@ -13,6 +13,9 @@ import keiyoushi.utils.get
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.post
 import keiyoushi.utils.toJsonRequestBody
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -219,32 +222,65 @@ class MovieBox(
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
         val detail = fetchDetail(anime.url) ?: return emptyList()
         val subject = detail.subject ?: return emptyList()
-        val subjectId = subject.subjectId ?: return emptyList()
-        val detailPath = subject.detailPath ?: return emptyList()
 
-        val seasons = detail.resource?.seasons.orEmpty()
+        // Collect every Sub/Dub variant that actually has episodes available.
+        val variants = coroutineScope {
+            subject.dubs.orEmpty().ifEmpty {
+                listOf(
+                    DubObject(
+                        subjectId = subject.subjectId,
+                        lanName = "Original",
+                        detailPath = subject.detailPath,
+                    ),
+                )
+            }.map { dub ->
+                async {
+                    val detailPath = dub.detailPath ?: return@async null
+                    val variantDetail = if (detailPath == subject.detailPath) {
+                        detail
+                    } else {
+                        runCatching { fetchDetail(detailPath) }.getOrNull()
+                    } ?: return@async null
+                    val variantSubject = variantDetail.subject ?: return@async null
+                    if (variantSubject.hasResource != true) return@async null
+                    val seasons = variantDetail.resource?.seasons.orEmpty()
+                    if (seasons.isEmpty()) return@async null
+                    VariantData(
+                        lanName = dub.lanName ?: "Original",
+                        subjectId = dub.subjectId ?: variantSubject.subjectId ?: return@async null,
+                        detailPath = detailPath,
+                        seasons = seasons,
+                    )
+                }
+            }.awaitAll().filterNotNull()
+        }
+
         val episodes = mutableListOf<SEpisode>()
         var globalNumber = 0f
 
-        for (season in seasons) {
-            val se = season.se ?: continue
-            val maxEp = season.maxEp ?: 0
+        for (variant in variants) {
+            for (season in variant.seasons) {
+                val se = season.se ?: continue
+                val maxEp = season.maxEp ?: 0
 
-            if (maxEp <= 0) {
-                // Single resource (movie / standalone feature)
-                globalNumber += 1
-                episodes += SEpisode.create().apply {
-                    name = "Movie"
-                    episode_number = globalNumber
-                    url = EpisodeData(subjectId, se, 0, detailPath).encode()
-                }
-            } else {
-                for (ep in 1..maxEp) {
+                if (maxEp <= 0) {
+                    // Single resource (movie / standalone feature)
                     globalNumber += 1
                     episodes += SEpisode.create().apply {
-                        name = "S${se}E$ep"
+                        name = "[${variant.lanName}] Movie"
                         episode_number = globalNumber
-                        url = EpisodeData(subjectId, se, ep, detailPath).encode()
+                        url = EpisodeData(variant.subjectId, se, 0, variant.detailPath, variant.lanName).encode()
+                        scanlator = variant.lanName
+                    }
+                } else {
+                    for (ep in 1..maxEp) {
+                        globalNumber += 1
+                        episodes += SEpisode.create().apply {
+                            name = "[${variant.lanName}] S${se}E$ep"
+                            episode_number = globalNumber
+                            url = EpisodeData(variant.subjectId, se, ep, variant.detailPath, variant.lanName).encode()
+                            scanlator = variant.lanName
+                        }
                     }
                 }
             }
@@ -264,9 +300,10 @@ class MovieBox(
             .addQueryParameter("se", data.se.toString())
             .addQueryParameter("ep", data.ep.toString())
             .addQueryParameter("detailPath", data.detailPath)
+            .addQueryParameter("streamSignType", "1")
             .build()
 
-        val play = client.get(url, apiHeaders).parseAs<ApiResponse<PlayData>>(json).data
+        val play = client.get(url, playHeaders()).parseAs<ApiResponse<PlayData>>(json).data
             ?: return emptyList()
 
         val videos = mutableListOf<Video>()
@@ -275,7 +312,7 @@ class MovieBox(
         if (streams.isNotEmpty()) {
             val subtitles = fetchCaptions("MP4", data.subjectId, data.detailPath, streams.first().id)
             streams.forEach { stream ->
-                videos += stream.toVideo("[MP4]", streamHeaders(stream), subtitles)
+                videos += stream.toVideo("[MP4]", streamHeaders(stream, data.detailPath), subtitles)
             }
         }
 
@@ -283,7 +320,7 @@ class MovieBox(
         if (dash.isNotEmpty()) {
             val subtitles = fetchCaptions("DASH", data.subjectId, data.detailPath, dash.first().id)
             dash.forEach { stream ->
-                videos += stream.toVideo("[DASH]", streamHeaders(stream), subtitles)
+                videos += stream.toVideo("[DASH]", streamHeaders(stream, data.detailPath), subtitles)
             }
         }
 
@@ -291,7 +328,7 @@ class MovieBox(
         if (hls.isNotEmpty()) {
             val subtitles = fetchCaptions("HLS", data.subjectId, data.detailPath, hls.first().id)
             hls.forEach { stream ->
-                videos += stream.toVideo("[HLS]", streamHeaders(stream), subtitles)
+                videos += stream.toVideo("[HLS]", streamHeaders(stream, data.detailPath), subtitles)
             }
         }
 
@@ -351,14 +388,34 @@ class MovieBox(
         return AnimesPage(map { it.toSAnime() }, hasNextPage)
     }
 
-    private fun streamHeaders(stream: StreamObject): Headers = headers.newBuilder()
+    private suspend fun playHeaders(): Headers {
+        val token = getAuthToken()
+        return apiHeaders.newBuilder()
+            .apply {
+                if (token.isNotBlank()) add("Authorization", "Bearer $token")
+                add("X-Client-Info", """{"timezone":"UTC"}""")
+                add("X-Source", "")
+                add("X-Vip-Restrict", "1")
+                add("X-Request-Lang", "en")
+            }
+            .build()
+    }
+
+    private fun streamHeaders(stream: StreamObject, detailPath: String): Headers = headers.newBuilder()
         .apply {
             if (!stream.signHeaderKey.isNullOrBlank() && !stream.signCookie.isNullOrBlank()) {
                 add(stream.signHeaderKey, stream.signCookie)
             }
-            add("Referer", "$baseUrl/")
+            add("Referer", "$baseUrl/detail/$detailPath")
         }
         .build()
+
+    private data class VariantData(
+        val lanName: String,
+        val subjectId: String,
+        val detailPath: String,
+        val seasons: List<SeasonObject>,
+    )
 
     companion object {
         const val CHANNEL_MOVIE = 1
