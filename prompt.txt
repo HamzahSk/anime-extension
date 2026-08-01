@@ -30,4 +30,4 @@ Setelah selesai, pastikan kode lolos pengecekan dengan menjalankan:
 ./gradlew testDebugUnitTest
 ```
 
-Perbaiki seluruh error atau warning yang muncul hingga semua proses selesai tanpa kegagalan.
+Perbaiki seluruh error atau warning yang muncul hingga semua proses selesai tanpa kegagalan. 
