@@ -1,0 +1,33 @@
+# Task: Repair Anime Extension (`src/all/xvideos`)
+
+Analisis dan perbaiki ekstensi anime pada:
+
+```text
+src/all/xvideos
+```
+
+Gunakan ekstensi anime lain yang masih berfungsi sebagai referensi implementasi. Ikuti arsitektur dan coding style repository, termasuk penggunaan `AnimeHttpSource`/base class yang sesuai, `OkHttpClient`, headers, cookies, interceptor, dan video extractor.
+
+Jika scraper sudah tidak sesuai dengan struktur website saat ini, lakukan analisis ulang terhadap website target dan sesuaikan kembali proses scraping (request, endpoint, selector, parsing HTML/JSON, video extractor, dll.). Jangan mempertahankan scraper lama jika sudah tidak kompatibel.
+
+Perbaiki seluruh bagian yang bermasalah, seperti:
+- Request & Response
+- Parsing anime, detail, episode, dan video
+- Search & pagination
+- Headers, Referer, User-Agent
+- Cookie/CookieJar bila diperlukan
+- Interceptor & HTTP client
+
+Gunakan helper/utilitas yang sudah tersedia di repository dan hindari membuat implementasi baru jika sudah ada pola yang digunakan ekstensi lain.
+
+## Validation
+
+Setelah selesai, pastikan kode lolos pengecekan dengan menjalankan:
+
+```bash
+./gradlew spotlessApply
+./gradlew spotlessCheck
+./gradlew testDebugUnitTest
+```
+
+Perbaiki seluruh error atau warning yang muncul hingga semua proses selesai tanpa kegagalan.

@@ -1,11 +1,11 @@
-name: Build Xvideos Only
+name: Build Anichin Only
 
 on:
   push:
     branches:
       - master
     paths:
-      - 'src/all/xvideos/**'  # Sesuaikan dengan path modul Xvideos Anda
+      - 'src/eu/kanade/tachiyomi/animeextension/id/anichin/**'
       - 'build.gradle'
       - '.github/workflows/build_push.yml'
   workflow_dispatch:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build Xvideos Extension
+    name: Build Anichin Extension
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -43,21 +43,21 @@ jobs:
           echo "$SIGNING_KEY" | base64 -d > signingkey.jks
           chmod 600 signingkey.jks
 
-      - name: Build Xvideos APK
+      - name: Build Anichin APK
         env:
           ALIAS: ${{ secrets.ALIAS }}
           KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # Mem-build APK khusus untuk modul Xvideos
-          ./gradlew :src:all:xvideos:spotlessApply
-          ./gradlew :src:all:xvideos:assembleRelease
+          # Perintah ini akan langsung mem-build APK untuk modul Anichin
+          ./gradlew :src:id:anichin:spotlessApply
+          ./gradlew :src:id:anichin:assembleRelease
 
-      - name: Upload Xvideos APK Artifact
+      - name: Upload Anichin APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: "Xvideos-APK"
-          path: "src/all/xvideos/build/outputs/apk/release/*.apk"
+          name: "Anichin-APK"
+          path: "**/*.apk"
           retention-days: 7
 
       - name: Clean up CI files
