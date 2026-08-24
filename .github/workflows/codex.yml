@@ -1,0 +1,170 @@
+name: Codex DB Fixer
+
+on:
+  workflow_dispatch:
+  push:
+    tags-ignore:
+      - '**'
+    paths:
+      - "prompt.md"
+
+permissions:
+  contents: read
+
+jobs:
+  codex-run:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version-file: .github/.java-version
+          distribution: temurin
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Configure Codex
+        run: |
+          mkdir -p ~/.codex
+          cat << EOF > ~/.codex/config.toml
+          model = "gpt-5.6-sol"
+          model_provider = "agentrouter"
+
+          [model_providers.agentrouter]
+          name = "AgentRouter"
+          base_url = "https://rocckyai.rockyyrec.workers.dev/v1"
+          wire_api = "responses"
+          experimental_bearer_token = "sk-1BOhosptLV2kztUELb9PhjjvYyIkIhqf7EYFbseS984Kb3FL"
+          EOF
+
+      - name: Check Codex Version
+        run: codex --version
+
+      - name: Run Codex
+        run: |
+          if [ ! -f prompt.md ]; then
+            echo "Error: prompt.md tidak ditemukan!"
+            exit 1
+          fi
+
+          codex --dangerously-bypass-approvals-and-sandbox exec "eksekusi perintah dari file prompt.md" 2>&1 | tee ai-response-recap.txt || true
+
+      - name: Collect changed files and AI recap
+        run: |
+          git add -A
+
+          mkdir -p output_artifact
+          touch output_artifact/deleted_files.txt
+
+          for file in $(git diff --cached --name-only); do
+            if [ -f "$file" ]; then
+              mkdir -p "output_artifact/$(dirname "$file")"
+              cp "$file" "output_artifact/$file"
+            else
+              echo "$file" >> output_artifact/deleted_files.txt
+            fi
+          done
+
+          if [ -f ai-response-recap.txt ]; then
+            cp ai-response-recap.txt output_artifact/ai-response-recap.txt
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codex-output-${{ github.sha }}
+          path: output_artifact/
+
+  build_app:
+    name: Build Modified App
+    needs: codex-run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Base Code
+        uses: actions/checkout@v4
+
+      - name: Download AI Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: codex-output-${{ github.sha }}
+          path: ai_changes
+
+      - name: Apply AI Changes to Code
+        run: |
+          if [ -f ai_changes/deleted_files.txt ]; then
+            while IFS= read -r file; do
+              rm -f "$file"
+            done < ai_changes/deleted_files.txt
+            rm ai_changes/deleted_files.txt
+          fi
+
+          cp -a ai_changes/. ./
+          rm -rf ai_changes
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Prepare signing key
+        if: env.HAS_SIGNING_KEY == 'true'
+        env:
+          HAS_SIGNING_KEY: ${{ secrets.SIGNING_KEY != '' }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          echo "$SIGNING_KEY" | base64 -d > signingkey.jks
+          chmod 600 signingkey.jks
+
+      - name: Detect Changes and Build
+        env:
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          git add -A
+
+          CHANGED_FILES=$(git diff --cached --name-only)
+
+          CHANGED_MODULES=$(echo "$CHANGED_FILES" | grep '^src/' | awk -F/ '{print ":"$1":"$2":"$3}' | sort -u)
+
+          if [ -z "$CHANGED_MODULES" ]; then
+            echo "Tidak ada perubahan kode di folder ekstensi (src/)."
+            exit 0
+          fi
+
+          echo "Modul anime yang terdeteksi berubah:"
+          echo "$CHANGED_MODULES"
+          echo "----------------------------------------"
+
+          for MODULE in $CHANGED_MODULES; do
+            echo "Memulai build untuk modul: $MODULE"
+            ./gradlew ${MODULE}:spotlessApply --stacktrace --no-daemon -Dorg.gradle.jvmargs="-Xmx4g"
+            ./gradlew ${MODULE}:assembleRelease --stacktrace --no-daemon -Dorg.gradle.jvmargs="-Xmx4g"
+          done
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: "changed-anime-extensions-apks"
+          path: "**/build/outputs/apk/release/*.apk"
+          retention-days: 7
+
+      - name: Clean up CI files
+        if: always()
+        run: rm -f signingkey.jks
